@@ -1,0 +1,172 @@
+---
+title: "Lab6"
+author: "Sebastián Sánchez Sandí"
+date: "2025-07-11"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Preparación:
+
+Primero cargamos las librerías que vamos a utilizar.
+
+```{r}
+library(lattice)
+```
+
+Ahora cargamos los datos y les damos el formato correcto para comenzar a trabajar. Ademas creamos la variable de IMC.
+
+```{r}
+load("100metros.Rdata")
+str(base)
+base$imc = base$peso / base$estatura^2
+```
+
+Cuando se toma en cuenta solamente los factores, el experimento cuenta con 6 tratamientos.
+
+```{r}
+table(base$calent, base$salida)
+```
+
+Para cada tratamiento contamos con 11 replicas.
+
+## Linealidad
+
+Este apartado queda fuera del alcance del laboratorio.
+
+## Variabilidad de la respuesta
+
+Primero obtenemos la varianza de la variable de respuesta bajo cada tratamiento.
+
+```{r}
+v = with(data = base, tapply(tiempo, list(calent, salida), var))
+v
+```
+
+Calculamos la estimacion de la varianza dentro de los tratamientos como el cuadrado medio residual. Como el experimento es balanceado podemos realizar la estimacion como el promedio de las varianzas.
+
+```{r}
+CMRes = mean(v)
+CMRes
+```
+
+Se estima que la varianza de los tratamientos es de 10.41. Ahora para poder visualizar de forma grafica esta variabilidad construimos un grafico de cajas.
+
+```{r}
+boxplot(tiempo~calent*salida, data = base)
+```
+
+Aca podemos visualizar la variabilidad de la variable de respuesta dentro de cada tratamiento sin tener en cuenta la covariable. Constuimos un grafico de puntos del tiempo contra el imc con una linea de regeresion para cada tratamiento para visualizar de forma grafica la varianza dentro de cada tratamiento.
+
+```{r}
+xyplot(tiempo~imc|calent+salida, type = c("r", "p"), data = base)
+```
+
+Como podemos observar, dentro de cada tratamiento los residuales parecen ser pequeños. Los residuales son las distancias entre cada punto y su linea de regresion.
+
+## Inclusion de la covariable
+
+Ahora construimos un modelo donde se tomen en cuenta la covariable con el fin de obtener los residuales. Este modelo puede ser con interaccion o sin interaccion.
+
+```{r}
+mod1 = lm(tiempo~calent*salida+imc, data = base)
+r1 = mod1$residuals
+```
+
+Como se definio anteriormente, los residuales representan las distancias entre cada punto y su recta correspondiente. Para poder calcular el cuadrado medio residual bajo este modelo de forma manual se necesita identificar la cantidad de parametros. Sea p igual al numero de parametros del modelo y sea n la cantidad de observaciones. Entonces el cuadrado medio residual se calcula como $CMRes = \frac{\sum{r^2}}{n - p}$. En este caso el modelo se representa como: $\mu_{ij}=\mu+\alpha_1+\alpha_2+\beta_1+(\alpha\beta)_{11}+(\alpha\beta)_{21}+\delta_1X$.
+
+```{r}
+n = 66
+p = 7
+CMResCov = sum(r1^2) / (n - p)
+```
+
+Como podemos ver el cuadrado medio residual se redujo de 10.41 a 3.75.
+
+## Prueba formal
+
+Verificamos con finalidad didactica ciertas propiedades de la prueba ANOVA.
+
+```{r}
+mod2a = lm(tiempo~calent*salida, data = base)
+mod2b = lm(tiempo~salida*calent, data = base)
+
+print(anova(mod2a))
+print(anova(mod2b))
+```
+
+Como podemos ver, el orden en que se ingresen los factores es indiferente ya que al final vamos a obtener las mismas probabilidades. Sin embargo, cuando se ingresa la covariable el orden toma importancia. Como la probabilidad de cometer error tipo 1 es mayor a 0.05, entonces no se rechaza la hipotesis de no interaccion. Se espera que no haya interaccion entre los factores.
+
+Como se detecto que no existe interaccion, se realiza la prueba de diferencia de medias con un modelo sin interaccion.
+
+```{r}
+mod3 = lm(tiempo~calent+salida, data = base)
+print(anova(mod3))
+```
+
+Como la probabilidad de cometer error tipo 1 es menor a 0.05, entonces rechazamos la hipotesis nula. Se espera que al menos una media bajo un nivel de calentamiento sea distinta.
+
+Ahora incluimos la covariable y probamos distintos ordenes para observar el cambio de probabilidades y porque es importante el orden.
+
+```{r}
+mod4a = lm(tiempo~calent+salida+imc, data = base)
+mod4b = lm(tiempo~imc+calent+salida, data = base)
+
+print(anova(mod4a))
+print(anova(mod4b))
+```
+
+La forma correcta de escribir el modelo es $\mu_{ij}=\beta_0+\beta_1X+\alpha_i+\gamma_j$ donde $\alpha_i$ es el efecto el i-esimo del nivel del factor de diseno y $\gamma_j$ es el efecto del j-esimo nidel del otro factor.
+
+Como vimos que si afecta el orden entonces lo acomodamos de la forma adecuada. Para continuar con el analisis necesitamos plantear dos modelos. Un modelo grande denominado $\Omega$ el cual incluye el factor de diseño y otro modelo pequeño denominado $\omega$ el cual excluye el factor de diseño.
+
+```{r}
+modGrande = lm(tiempo~imc+calent+salida, data = base)
+modPeq = lm(tiempo~imc+salida, data = base)
+```
+
+Ahora, necesitamos la suma de cuadrados marginal la cual se define como la resta de la suma de cuadrados residual del modelo grande menos la del modelo pequeño. $SCResMarg=SCRes_\omega-SCRes_\Omega$. Esta representa la parte de la variabilidad que es explicada por calentamiento cuando entra despues de las otras dos variables.
+
+```{r}
+SCResGrande = anova(modGrande)[4, 2]
+SCResPeq = anova(modPeq)[3, 2]
+SCResMarg = SCResPeq - SCResGrande
+SCResMarg
+```
+
+Entonces 85.51 unidades de la variabilidad son explicadas por el factor de diseño, en este caso calentamiento. Ahora construimos el estadistico F para realizar la prueba de hipotesis. Este se construye como $F=\frac{\frac{SCRes_\omega-SCRes_\Omega}{df_\omega-df_\Omega}}{\frac{SCRes_\Omega}{df_\Omega}}$
+
+```{r}
+dfGrande = anova(modGrande)[4, 1]
+dfPeq = anova(modPeq)[3, 1]
+
+f = (SCResMarg / (dfPeq - dfGrande)) / (SCResGrande / dfGrande)
+f
+```
+
+El estadistico f es igual a 11.77 que podemos ver que coincide con el estadistico F en el anova cuando lo ralizamos en el orden correcto. Ahora buscamos la probabilidad de ver este estadistico en la distribucion f la cual deberia ser muy pequeña.
+
+```{r}
+pf(f, dfPeq - dfGrande, dfGrande, lower.tail = F)
+```
+
+Como podemos ver es 0.00005 lo cual es diminuto. Recordando, la hipotesis nula es que los dos modelos explican lo mismo. Esto es equivalente a decir que los efectos de los niveles de calentamiento son iguales a 0, lo que es equivalente a decir que las medias del tiempo son iguales para todos los niveles de calentamiento. Por lo tanto, rechazamos la hipotesis nula. Se espera que los dos modelos no expliquen lo mismo, es decir que al menos un efecto de algun nivel de calentamiento sea distinto a 0.
+
+La forma corta de realizar todo este analisis es el siguiente. Al utilizar el comando drop1 el orden en el que se escribio el modelo es indiferente.
+
+```{r}
+drop1(mod4b, test = "F")
+```
+
+Se puede utilizar este comando para evaluar interaccion tambien.
+
+```{r}
+drop1(mod1, test = "F")
+```
+
+Coincide con el analisis que realizamos anteriormente.
