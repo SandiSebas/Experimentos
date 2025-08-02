@@ -1,0 +1,142 @@
+---
+title: "Comparaciones Multples no Ortogonales"
+author: "Sebastián Sánchez Sandí"
+date: "2025-08-01"
+output:
+  pdf_document: default
+  html_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Preparación
+
+Los datos se encuentran en el archivo *uvas.csv*.
+
+```{r echo=TRUE}
+base = read.csv("uvas.csv")
+str(base)
+```
+
+Como lo que se quiere probar es si el dulzor varia dependiendo de la localidad, entonces el factor de diseño es la localidad.
+
+```{r echo=TRUE}
+base$localidad = factor(base$localidad)
+```
+
+## Hipótesis Básica
+
+Para probar que las 3 localidades no producen el mismo dulzor planteamos las siguientes hipótesis:
+
+-   $H_0=\mu_1=\mu_2=\mu_3$ con $H_a=$ al menos una media es distinta.
+
+Ahora construimos un boxplot para visualizar la variabilidad de cada tratamiento.
+
+```{r echo=TRUE}
+boxplot(brix~localidad, data = base)
+title("Comparación del dulzor entre localidades")
+```
+
+Podemos ver que parece que las medias entre la Guacima y San Vito son parecidas y la Garita está un poco por encima, pero al existir variabilidad no podemos afirmar esto. Estimamos las medias de cada tratamiento para visualizar diferencias.
+
+```{r echo=TRUE}
+m = with(data = base, tapply(brix, localidad, mean))
+m
+```
+
+Las medias parecen respaldar la idea inicial que Garita produce en promedio uvas más dulces. Ponemos a prueba esta hipótesis con un análisis de varianza.
+
+```{r echo=TRUE}
+mod = lm(brix~localidad, data = base)
+anova(mod)
+```
+
+Como la probabilidad de cometer error tipo 1 es menor a 0.05, entonces rechazamos la hipótesis nula. Se espera que al menos una localidad produzca en promedio uvas más dulces.
+
+## Comparaciones de Promedios
+
+Como en este caso se deben comparar todas las medias entre sí utilizamos tukey. Primero planteamos todas las hipótesis necesarias.
+
+-   $H_0:\mu_1=\mu_2$ con $H_a:\mu_1\neq\mu_2$
+-   $H_0:\mu_1=\mu_3$ con $H_a:\mu_1\neq\mu3$
+-   $H_0:\mu_2=\mu_3$ con $H_a:\mu_2\neq\mu_3$
+
+Para verificar que estas hipótesis no son ortogonales realizamos el siguiente procedimiento. Si suponemos que el vector de coeficientes es $(\mu_1, \mu_2,\mu_3)^T$ entonces podemos multiplicar las hipótesis y revisar la ortogonalidad.
+
+```{r echo=TRUE}
+h1 = c(1, -1, 0)
+h2 = c(1, 0, -1)
+h3 = c(0, 1, -1)
+
+h1 %*% h2
+h2 %*% h3
+h1 %*% h3
+```
+
+Como podemos ver no son ortogonales, por lo que requieren corrección de bonferroni. Con esto en mente calculamos el CMRes.
+
+```{r echo=TRUE}
+CMRes = anova(mod)[2, 3]
+CMRes
+```
+
+Ahora calculamos los estadísticos de interés que serían todas las diferencias entre las medias en valor absoluto.
+
+```{r echo=TRUE}
+d1 = abs(m[1] - m[2])
+d2 = abs(m[1] - m[3])
+d3 = abs(m[2] - m[3])
+diff = c(d1, d2, d3)
+names(diff) = c("Ga-Gu", "Ga-Sv", "Gu-Sv")
+diff
+```
+
+Ahora calculamos el error estándar de los contrastes.
+
+```{r echo=TRUE}
+r = table(base$localidad)
+se1 = sqrt(CMRes * (1 / r[1] + 1 / r[2]))
+se2 = sqrt(CMRes * (1 / r[1] + 1 / r[3]))
+se3 = sqrt(CMRes * (1 / r[2] + 1 / r[3]))
+se = c(se1, se2, se3)
+se
+```
+
+Con todo esto ya podemos calcular el estadístico estandarizado para obtener su probablidad con la distribución de Tukey.
+
+```{r echo=TRUE}
+q = diff / se
+q
+```
+
+Con esto y como las hipótesis no son ortogonales, entonces utilizamos la distribución de Tukey para hacer esta corrección. Los grados de libertad de esta distribución son los grados de libertad del tratamiento y del residuo.
+
+```{r echo=TRUE}
+ptukey(q * sqrt(2), 3, 97, lower.tail = F)
+```
+
+Como la prueba ya hizo la correción entonces podemos comparar todo contra 0.05. En los casos de la primera y segunda hipótesis se rechazan ya que son menores a 0.05 y la tercera no se rechaza. En otras palabras, la media de dulzor de las uvas de Garita es distinta a las de San Vito y a la Guacima, pero San Vito y la Guacima no tienen diferencia.
+
+Cabe destacar que todo este análisis puede hacerse de manera automática de la siguiente forma.
+
+```{r echo=TRUE}
+TukeyHSD(aov(mod))
+```
+
+## Límites para las diferencias
+
+Como solamente debemos hacer 2 intrervalos tenemos que recurrir a la corrección de Bonferroni. Entonces tenemos que d = 2.
+
+```{r echo=TRUE}
+t = qt(1 - 0.05 / (2 * 2), 97)
+lim = cbind(diff[1:2] - t * se[1:2], diff[1:2] + t * se[1:2])
+lim
+```
+
+Para realizar la conclusión es importante definir que puede ser una diferencia relevante ya que en este caso la diferencia entre el promedio de dulzor de las uvas entre Garita y la Guacima puede llegar a ser tan baja como 0.06. Lo cual puede ser insignificante para el investigador. Finalmente, todas estas conclusiones se hacen con un 95%, no cada una por separado.
+
+
