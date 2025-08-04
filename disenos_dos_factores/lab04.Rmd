@@ -1,0 +1,187 @@
+---
+title: "ANOVA sin Interacción"
+author: "Sebastián Sánchez Sandí"
+date: "2025-08-02"
+output:
+  pdf_document: default
+  html_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Preparación
+
+Los datos para realizar el análisis se encuentran en *torugas1.csv*.
+
+```{r echo=TRUE}
+base = read.csv("tortugas1.csv")
+str(base)
+```
+
+Cambiamos el tipo de genero y cond a factor para poder utilizar las herramientas del análisis.
+
+```{r echo=TRUE}
+base$genero = factor(base$genero)
+base$cond = factor(base$cond)
+levels(base$genero) = c("macho", "hembra")
+```
+
+Este experimento cuanta con 2 factores cada uno con 2 niveles. Esto indica que el experimento tiene 4 tratamientos. El factor de diseño es la condición de la alimentación de las tortugas.
+
+```{r echo=TRUE}
+table(list(base$genero, base$cond))
+```
+
+Cada tratamiento tiene 4 repeticiones.
+
+## Efectos
+
+Como es un experimento con dos tratamientos, entonces podemos calcular los efectos de los dos tratamientos. El efecto de la condición de la alimentación se representa como $\alpha_i=\mu_{i.}-\mu$ y el genero $\beta_j=\mu_{.j}-\mu$
+
+```{r echo=TRUE}
+mediaGeneral = mean(base$proteina)
+mediaCond = with(data = base, tapply(proteina, cond, mean))
+mediaGenero = with(data = base, tapply(proteina, genero, mean))
+
+alpha = mediaCond - mediaGeneral
+beta = mediaGenero - mediaGeneral
+
+alpha
+beta
+```
+
+Ahora calculamos la media bajo cada tratamiento de los datos observados.
+
+```{r echo=TRUE}
+mediaCI = with(data = base, tapply(proteina, list(cond, genero), mean))
+mediaCI
+```
+
+Ahora para comparar calculamos la media bajo un modelo sin interacción. Sin interacción $\mu_{ij}=\mu+\alpha_i+\beta_j$, con interacción $\mu_{ij}=\mu+\alpha_i+\beta_j+(\alpha\beta)_{ij}$. Las medias bajo interacción son iguales a las medias observadas.
+
+```{r echo=TRUE}
+m1 = mediaGeneral + alpha[1] + beta[1]
+m2 = mediaGeneral + alpha[2] + beta[1]
+m3 = mediaGeneral + alpha[1] + beta[2]
+m4 = mediaGeneral + alpha[2] + beta[2]
+
+mediaSI = c(m1, m2, m3, m4)
+mediaSI
+```
+
+Construimos una tabla para compararlos entre si.
+
+```{r echo=TRUE}
+comp = cbind(as.vector(mediaCI), mediaSI)
+colnames(comp) = c("mediaCI", "mediaSI")
+row.names(comp) = c("alimento-macho", "dieta-macho", "alimento-hembra", "dieta-hembra")
+comp
+```
+
+Como podemos ver las medias son bastante similares entre cada uno de los modelos. Esto nos da un indicio de que puede que no exista interacción.
+
+Ahora para poder ver de forma gráfica la interacción construimos un gráfico de lineas con la librería ggplot2.
+
+```{r echo=TRUE}
+library(ggplot2)
+
+ggplot(data = base, aes(x = genero, y = proteina, group = cond)) +
+  stat_summary(fun = "mean", geom = "line", aes(linetype = cond)) +
+  labs(title = "Comparación de las medias de la proteina bajo tratamientos")
+```
+
+En el gráfico se pueden ver que las diferencia entre las medias bajo cada nivel de condición de alimentación es similar para cada nivel de genero. Esto también es una indicación de que no puede haber interacción. Utilizando aov podemos obtener los efectos simples y los efectos de interacción.
+
+```{r echo=TRUE}
+mod = aov(proteina~cond*genero, data = base)
+model.tables(mod)
+```
+
+## Efectos de Interacción en el Modelo
+
+Ahora construimos el modelo con lm.
+
+```{r echo=TRUE}
+options(contrasts = c("contr.sum", "contr.poly"))
+mod = lm(proteina~cond*genero, data = base)
+mod$coefficients
+```
+
+Los coeficientes en este caso son los efectos simples y el efecto de interacción.
+
+## Varianza del Error
+
+Construimos un grafíco de cajas para visualizar la variabilidad dentro de cada tratamiento.
+
+```{r echo=TRUE}
+boxplot(proteina~cond*genero, data = base)
+```
+
+Según el gráfico parece que todos los tratamientos provienen de distribuciones con la misma varianza.
+
+```{r echo=TRUE}
+v = with(data = base, tapply(proteina, list(cond, genero), var))
+v
+```
+
+Para verificar que existe homocedasticidad vamos a utilizar la prueba de bartlett.
+
+```{r echo=TRUE}
+bartlett.test(proteina~interaction(cond, genero), data = base)
+```
+
+Como la probabilidad de cometer error tipo 1 es mayor a 0.05, entonces no rechazamos la hipótesis nula. Se espera que si exista homocedasticidad.
+
+## Prueba de Hipótesis de Interacción
+
+Las visualizaciones y las estimaciones nos dan indicios de que puede que no exista interacción entre los factores, pero vamos a formalizarlo con una prueba ANOVA.
+
+```{r echo=TRUE}
+mod = lm(proteina~cond*genero, data = base)
+
+anova(mod)
+```
+
+La hipótesis que estamos poniendo a prueba es la siguiente:
+
+- $H_0:(\alpha\beta)_{ij}=0$ con $H_a:(\alpha\beta)_{ij}\neq0$
+
+En este caso como la probabilidad de comete error tipo 1 es mayor a 0.05 no rechazamos la hipótesis nula. Se espera que no exista interacción entre condición de alimentación y genero, en otras palabras, el efecto de la condición de alimnetación es independiente al genero.
+
+## Estimaciones bajo el Modelo sin Interacción
+
+Como no rechazamos la hipótesis de interacción, entonces podemos utiliar el modelo sin interacción que es más simple.
+
+```{r echo=TRUE}
+mod2 = lm(proteina~cond+genero, data = base)
+mod2$coef
+```
+
+Ahora en este caso los coeficientes del modelo son simplemente los efectos simples de los factores. Como no existe interacción se pasa a la siguiente hipótesis sobre el efecto del factor de diseño:
+
+- $H_0:\alpha_1=\alpha_2=0$ con $H_a:$ al menos un efecto es distinto a 0
+
+```{r echo=TRUE}
+anova(mod2)
+```
+
+Como la probabilidad de cometer error tipo 1 es menor a 0.05, entonces rechazamos la hipótesis nula. Se espera que en promedio al menos una las condiciones de alimentación sea distinta.
+
+Construimos ahora una cota inferior para esta diferencia para verificar si es relevante. 
+
+```{r echo=TRUE}
+h = c(0, 2, 0)
+coef = mod2$coefficients
+L = h %*% coef
+seL = sqrt(diag(t(h)%*%vcov(mod2)%*%h))
+t = qt(1 - 0.05, 13)
+lim = L - t*seL
+lim
+```
+
+Entonces ahora sabemos que la cota inferior para la diferencia entre la media de proteina generada bajo alimentación en abundancia y en diatea puede ser tan baja como 0.77 con un 95% de confianza independientemente de si son machos o hembras.
+
