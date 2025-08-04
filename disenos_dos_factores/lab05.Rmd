@@ -1,0 +1,12 @@
+---
+title: "lab05"
+author: "Sebastián Sánchez Sandí"
+date: "2025-08-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
